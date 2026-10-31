@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Jobs · chapterwise{% endblock %}
+{% block content %}
+<h1>Jobs</h1>
+<p class="muted small">
+  {% for status in ["queued", "running", "done", "failed"] %}{{ status }}: {{ queue.get(status, 0)|num }}{% if not loop.last %} · {% endif %}{% endfor %}
+</p>
+{% if not jobs %}
+  <p class="muted">No jobs yet.</p>
+{% else %}
+<div class="table-wrap">
+<table>
+  <thead><tr><th class="num">#</th><th>Job</th><th>Status</th><th class="hide-sm">When</th></tr></thead>
+  <tbody>
+  {% for job in jobs %}
+    {% set doc_id = job.payload.get("document_id") %}
+    <tr>
+      <td class="num muted">{{ job.id }}</td>
+      <td>
+        {{ job.kind }}
+        {% if doc_id %}· <a href="/b/{{ doc_id }}">{{ titles.get(doc_id, "book " ~ doc_id) }}</a>{% endif %}
+        {% if job.payload.get("position") is not none %}· section {{ job.payload["position"] }}{% endif %}
+        {% if job.error %}<div class="small error">{{ job.error[:300] }}</div>{% endif %}
+      </td>
+      <td>
+        <span class="pill {% if job.status == 'failed' %}error{% elif job.status == 'done' %}ok{% endif %}">{{ job.status }}</span>
+        {% if job.attempts > 1 %}<span class="muted small">×{{ job.attempts }}</span>{% endif %}
+        {% if job.status == "failed" %}
+          <form class="inline" method="post" action="/jobs/{{ job.id }}/retry"><button class="quiet" type="submit">Retry</button></form>
+        {% endif %}
+      </td>
+      <td class="hide-sm muted small">{{ (job.finished_at or job.started_at or job.created_at).strftime("%d %b %H:%M") }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{% if refresh %}<meta http-equiv="refresh" content="5">{% endif %}
+<title>{% block title %}chapterwise{% endblock %}</title>
+<style>
+  :root {
+    --bg: #faf8f4; --surface: #ffffff; --text: #1f1d1a; --muted: #6b665e; --line: #e6e1d8;
+    --accent: #2f5d50; --accent-text: #ffffff; --warn: #8a5a00; --warn-bg: #fff4dc; --bad: #9b2c2c;
+    --ok: #2f6b3a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161513; --surface: #1f1e1b; --text: #ece8e1; --muted: #a39d93; --line: #34312c;
+      --accent: #7fb5a3; --accent-text: #10201b; --warn: #f0c36b; --warn-bg: #3a2f17; --bad: #f08a8a;
+      --ok: #8fd19e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  header { border-bottom: 1px solid var(--line); background: var(--surface); }
+  .bar { max-width: 960px; margin: 0 auto; padding: 12px 16px; display: flex; gap: 16px; align-items: center; }
+  .brand { font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
+  .bar nav { display: flex; gap: 14px; margin-left: auto; align-items: center; }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 1.6rem; line-height: 1.25; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 1.15rem; margin: 28px 0 8px; }
+  .muted { color: var(--muted); }
+  .small { font-size: 0.875rem; }
+  .notice { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 10px 14px; margin: 0 0 20px; }
+  .error { color: var(--bad); }
+  .ok { color: var(--ok); }
+  button, .button { font: inherit; font-size: 0.875rem; border: 1px solid var(--accent); background: var(--accent);
+                    color: var(--accent-text); border-radius: 6px; padding: 5px 12px; cursor: pointer; }
+  button.quiet { background: transparent; color: var(--accent); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  form.inline { display: inline; margin: 0; }
+  input[type=search], input[type=password] { font: inherit; padding: 7px 10px; border: 1px solid var(--line);
+      border-radius: 6px; background: var(--surface); color: var(--text); width: 100%; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 0.8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  td.num, th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .toolbar { display: flex; gap: 10px; align-items: center; margin: 16px 0; flex-wrap: wrap; }
+  .toolbar form.grow { flex: 1; min-width: 200px; }
+  .pill { font-size: 0.78rem; border-radius: 99px; padding: 1px 8px; border: 1px solid var(--line); white-space: nowrap; }
+  .reading { max-width: 68ch; font-size: 1.05rem; }
+  .reading h1, .reading h2, .reading h3 { margin-top: 1.4em; }
+  details { margin-top: 32px; border-top: 1px solid var(--line); padding-top: 12px; }
+  details pre { white-space: pre-wrap; font: inherit; color: var(--muted); }
+  .pager { display: flex; justify-content: space-between; gap: 16px; margin-top: 32px; }
+  .table-wrap { overflow-x: auto; }
+  @media (max-width: 640px) { .hide-sm { display: none; } h1 { font-size: 1.35rem; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <a class="brand" href="/">chapterwise</a>
+    {% if request.session.get("user") %}
+    <nav>
+      <a href="/">Library</a>
+      <a href="/jobs">Jobs</a>
+      <form class="inline" method="post" action="/logout"><button class="quiet" type="submit">Log out</button></form>
+    </nav>
+    {% endif %}
+  </div>
+</header>
+<main>
+{% if request.session.get("user") and not api_key_set %}
+  <p class="notice">DEEPSEEK_API_KEY isn't set, so summarizing is turned off. Books can still be browsed.</p>
+{% endif %}
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

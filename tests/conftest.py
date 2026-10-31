@@ -126,3 +126,82 @@ class FakeLLM:
 @pytest.fixture
 def fake_llm() -> FakeLLM:
     return FakeLLM()
+
+
+# --- Postgres (service tests) -----------------------------------------------------------------------------
+# Set TEST_DATABASE_URL to a database the tests may wipe, e.g.
+#   postgresql+psycopg://postgres:postgres@localhost:5432/chapterwise_test
+# Tests that need it are skipped when it isn't set.
+
+
+@pytest.fixture(scope="session")
+def database_url() -> str:
+    import os
+
+    from chapterwise.config import normalize_database_url
+
+    url = normalize_database_url(os.environ.get("TEST_DATABASE_URL"))
+    if not url:
+        pytest.skip("TEST_DATABASE_URL is not set")
+    return url
+
+
+@pytest.fixture(scope="session")
+def migrated_engine(database_url):
+    from sqlalchemy import text
+
+    from chapterwise.db import make_engine
+    from chapterwise.migrate import upgrade
+
+    engine = make_engine(database_url)
+    with engine.begin() as conn:  # start from an empty schema so the migration itself is tested
+        conn.execute(text("DROP SCHEMA public CASCADE; CREATE SCHEMA public"))
+    upgrade(database_url)
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture
+def sessions(migrated_engine):
+    from sqlalchemy import text
+
+    from chapterwise.db import make_session_factory
+
+    with migrated_engine.begin() as conn:
+        conn.execute(text("TRUNCATE documents, sections, jobs, llm_cache RESTART IDENTITY CASCADE"))
+    return make_session_factory(migrated_engine)
+
+
+@pytest.fixture
+def books_dir(tmp_path: Path, sample_epub: Path) -> Path:
+    """A books folder laid out like BookOrbit's: Author/Title/file."""
+    folder = tmp_path / "books"
+    (folder / "Ada Tester" / "The Test Book").mkdir(parents=True)
+    sample_epub.rename(folder / "Ada Tester" / "The Test Book" / "test-book.epub")
+    (folder / "notes").mkdir()
+    (folder / "notes" / "playbook.md").write_text(
+        f"# Playbook\n\n## One\n\n{words('one')}\n\n## Two\n\n{words('two')}\n", encoding="utf-8"
+    )
+    (folder / "notes" / "ignored.txt").write_text("not a book")
+    (folder / ".hidden").mkdir()
+    (folder / ".hidden" / "secret.md").write_text(words("hidden"))
+    return folder
+
+
+@pytest.fixture
+def settings(database_url, books_dir):
+    from chapterwise.config import Settings
+
+    return Settings(
+        api_key="sk-test",
+        base_url="http://127.0.0.1:9",
+        model="fake-model",
+        max_chunk_tokens=24_000,
+        cache_dir=Path("/nonexistent"),
+        database_url=database_url,
+        books_dir=books_dir,
+        secret_key="test-secret",
+        admin_password="correct horse",
+        public_url="http://testserver",
+        scan_interval=600,
+    )

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Library · chapterwise{% endblock %}
+{% block content %}
+<h1>Library</h1>
+<p class="muted small">
+  {{ docs|length }} book{{ "" if docs|length == 1 else "s" }}{% if q %} matching “{{ q }}”{% endif %}
+  {% if queue.get("queued") or queue.get("running") %} · {{ (queue.get("queued", 0) + queue.get("running", 0))|num }} job(s) in progress{% endif %}
+  {% if queue.get("failed") %} · <a class="error" href="/jobs">{{ queue["failed"] }} failed</a>{% endif %}
+</p>
+
+<div class="toolbar">
+  <form class="grow" method="get" action="/"><input type="search" name="q" value="{{ q }}" placeholder="Search title or author"></form>
+  <form class="inline" method="post" action="/rescan"><button class="quiet" type="submit">Rescan folder</button></form>
+</div>
+
+{% if not docs %}
+  <p class="muted">{% if q %}No books match.{% else %}No books yet. Add EPUB, PDF or Markdown files to the books folder, then rescan.{% endif %}</p>
+{% else %}
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Book</th><th class="hide-sm">Format</th><th class="num">Sections</th><th class="num">Summarized</th></tr></thead>
+  <tbody>
+  {% for doc in docs %}
+    {% set s = stats.get(doc.id, {"sections": 0, "summarized": 0}) %}
+    <tr>
+      <td>
+        <a href="/b/{{ doc.id }}">{{ doc.title }}</a>
+        {% if doc.author %}<div class="muted small">{{ doc.author }}</div>{% endif %}
+        {% if doc.status == "pending" %}<span class="pill">preparing…</span>{% endif %}
+        {% if doc.status == "error" %}<span class="pill error">can't read</span>{% endif %}
+        {% if doc.status == "missing" %}<span class="pill muted">file removed</span>{% endif %}
+      </td>
+      <td class="hide-sm small">{{ doc.format|upper }}</td>
+      <td class="num">{{ s.sections|num }}</td>
+      <td class="num">{% if s.sections %}{{ s.summarized }}/{{ s.sections }}{% else %}–{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

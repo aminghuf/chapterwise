@@ -1,6 +1,6 @@
 """A content-addressed cache so the same request never hits the API twice.
 
-Phase 1 stores JSON files on disk; the service will swap in a Postgres-backed cache with the same interface.
+The CLI stores JSON files on disk; the service uses Postgres. Both share one interface.
 """
 
 from __future__ import annotations
@@ -12,6 +12,12 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
+
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import sessionmaker
+
+from chapterwise.db import CacheEntry
 
 
 class Cache(Protocol):
@@ -47,3 +53,29 @@ class FileCache:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(record, f, ensure_ascii=False, indent=1)
         os.replace(tmp, path)
+
+
+class PostgresCache:
+    """The same cache in the service's database (table llm_cache)."""
+
+    def __init__(self, session_factory: sessionmaker):
+        self._sessions = session_factory
+
+    def get(self, key: dict[str, Any]) -> dict[str, Any] | None:
+        with self._sessions() as session:
+            entry = session.get(CacheEntry, cache_digest(key))
+            return entry.value if entry else None
+
+    def set(self, key: dict[str, Any], value: dict[str, Any]) -> None:
+        stmt = insert(CacheEntry).values(digest=cache_digest(key), key=key, value=value)
+        stmt = stmt.on_conflict_do_update(index_elements=[CacheEntry.digest], set_={"value": value})
+        with self._sessions() as session:
+            session.execute(stmt)
+            session.commit()
+
+    def existing(self, digests: list[str]) -> set[str]:
+        """Which of these digests are cached (one query, for list pages)."""
+        if not digests:
+            return set()
+        with self._sessions() as session:
+            return set(session.scalars(select(CacheEntry.digest).where(CacheEntry.digest.in_(digests))))
