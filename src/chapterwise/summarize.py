@@ -37,8 +37,23 @@ class Estimate:
     input_tokens: int
 
 
-def _sha(text: str) -> str:
+def text_sha256(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
+
+
+def cache_key(
+    kind: str, text_hash: str, book_title: str, section_title: str, model: str, **extra: str
+) -> dict[str, str]:
+    """The cache key of one LLM result. kind="section" is a finished section summary."""
+    return {
+        "kind": kind,
+        "text_sha256": text_hash,
+        "book": book_title,
+        "section": section_title,
+        "model": model,
+        "prompt_version": prompts.PROMPT_VERSION,
+        **extra,
+    }
 
 
 class Summarizer:
@@ -118,15 +133,7 @@ class Summarizer:
         return notes
 
     def _key(self, kind: str, text: str, doc: Document, section: Section, **extra: str) -> dict[str, str]:
-        return {
-            "kind": kind,
-            "text_sha256": _sha(text),
-            "book": doc.title,
-            "section": section.title,
-            "model": self.llm.model,
-            "prompt_version": prompts.PROMPT_VERSION,
-            **extra,
-        }
+        return cache_key(kind, text_sha256(text), doc.title, section.title, self.llm.model, **extra)
 
     def _cached_call(
         self,

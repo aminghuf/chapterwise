@@ -1,7 +1,8 @@
-"""Command line: inspect a book's sections and summarize them."""
+"""Command line: inspect and summarize books, and run the service (migrate, serve, worker)."""
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Annotated
 
@@ -150,6 +151,53 @@ def summarize(
         f"{total.tokens_in:,} tokens in / {total.tokens_out:,} out",
         err=True,
     )
+
+
+# --- service ----------------------------------------------------------------------------------------------
+
+
+def _logging() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+
+@app.command()
+def migrate() -> None:
+    """Create or upgrade the database schema."""
+    from chapterwise.migrate import upgrade
+
+    settings = Settings.from_env()
+    settings.require("database_url")
+    _logging()
+    upgrade(settings.database_url)
+    typer.echo("Database is up to date.")
+
+
+@app.command()
+def serve(
+    host: Annotated[str, typer.Option(help="Interface to listen on")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Port to listen on")] = 8100,
+) -> None:
+    """Run the web UI."""
+    import uvicorn
+
+    from chapterwise.web import create_app
+
+    _logging()
+    app_ = create_app(Settings.from_env())
+    # Behind Caddy: trust X-Forwarded-* so logs and login throttling see the real client address.
+    uvicorn.run(app_, host=host, port=port, proxy_headers=True, forwarded_allow_ips="*")
+
+
+@app.command()
+def worker() -> None:
+    """Run the background worker: library scans, parsing and summaries."""
+    from chapterwise.db import make_engine, make_session_factory
+    from chapterwise.worker import Worker
+
+    settings = Settings.from_env()
+    settings.require("database_url")
+    _logging()
+    Worker(settings, make_session_factory(make_engine(settings.database_url))).run_forever()
 
 
 class _NoLLM:

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}{{ doc.title }} · chapterwise{% endblock %}
+{% block content %}
+<p class="small"><a href="/">← Library</a></p>
+<h1>{{ doc.title }}</h1>
+<p class="muted">{% if doc.author %}{{ doc.author }} · {% endif %}{{ doc.format|upper }} · <span class="small">{{ doc.path }}</span></p>
+
+{% if doc.status == "pending" %}
+  <p class="notice">Reading the table of contents… this page refreshes by itself.</p>
+{% elif doc.status == "error" %}
+  <p class="notice">Can't read this file: {{ doc.error }}</p>
+{% elif doc.status == "missing" %}
+  <p class="notice">This file is no longer in the books folder. Existing summaries are kept.</p>
+{% endif %}
+
+{% if rows %}
+<div class="toolbar">
+  {% if missing_count %}
+  <form class="inline" method="post" action="/b/{{ doc.id }}/summarize">
+    <input type="hidden" name="sections" value="all">
+    <button type="submit" {% if not api_key_set %}disabled{% endif %}>Summarize all remaining ({{ missing_count }})</button>
+  </form>
+  <span class="muted small">≈ {{ missing_tokens|num }} tokens of text with {{ model }}</span>
+  {% else %}
+  <span class="ok small">Every section is summarized or queued.</span>
+  {% endif %}
+</div>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th class="num">#</th><th>Section</th><th class="num hide-sm">Words</th><th class="num">Summary</th></tr></thead>
+  <tbody>
+  {% for row in rows %}
+    {% set s = row.section %}
+    <tr id="s{{ s.position }}">
+      <td class="num muted">{{ s.position }}</td>
+      <td style="padding-left: {{ 8 + (s.level - top_level) * 18 }}px"><a href="/b/{{ doc.id }}/s/{{ s.position }}">{{ s.title }}</a></td>
+      <td class="num hide-sm muted">{{ s.words|num }}</td>
+      <td class="num">
+        {% if row.state == "done" %}<a href="/b/{{ doc.id }}/s/{{ s.position }}">Read</a>
+        {% elif row.state == "running" %}<span class="pill">working…</span>
+        {% elif row.state == "queued" %}<span class="pill">queued</span>
+        {% else %}
+          <form class="inline" method="post" action="/b/{{ doc.id }}/summarize">
+            <input type="hidden" name="sections" value="{{ s.position }}">
+            <button class="quiet" type="submit" {% if not api_key_set %}disabled{% endif %}>Summarize</button>
+          </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}
