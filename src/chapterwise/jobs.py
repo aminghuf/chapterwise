@@ -5,13 +5,14 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from chapterwise.db import ACTIVE_JOB_STATUSES, Job
 
 MAX_ATTEMPTS = 3
+ACTIVE_DEDUPE_PREDICATE = text("status IN ('queued', 'running')")  # same as the jobs_active_dedupe index
 RETRY_BASE_SECONDS = 30
 
 
@@ -22,9 +23,9 @@ def enqueue(
     stmt = (
         insert(Job)
         .values(kind=kind, payload=payload or {}, dedupe_key=dedupe_key, status="queued")
-        .on_conflict_do_nothing(
-            index_elements=[Job.dedupe_key], index_where=Job.status.in_(ACTIVE_JOB_STATUSES)
-        )
+        # The predicate must be literal SQL: with bound parameters, Postgres switches to a generic plan
+        # after a few executions and can no longer match the partial unique index.
+        .on_conflict_do_nothing(index_elements=[Job.dedupe_key], index_where=ACTIVE_DEDUPE_PREDICATE)
         .returning(Job.id)
     )
     return session.execute(stmt).first() is not None

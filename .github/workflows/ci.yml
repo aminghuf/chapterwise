@@ -98,7 +98,7 @@ jobs:
       cancel-in-progress: false
     env:
       REMOTE: root@${{ secrets.DEPLOY_HOST }}
-      REMOTE_DIR: /root/chapterwise
+      REMOTE_DIR: ${{ vars.DEPLOY_DIR || '/root/chapterwise' }}
       TAG: sha-${{ github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -161,5 +161,5 @@ jobs:
             sleep 5
           done
           echo "::error::Health check failed. Recent logs:"
-          ssh "$REMOTE" "cd $REMOTE_DIR && ./cw.sh ps && ./cw.sh logs --tail 80 migrate web worker" || true
+          ssh "$REMOTE" "cd $REMOTE_DIR && ./cw.sh ps && ./cw.sh logs --tail 80 migrate web worker bot" || true
           exit 1

@@ -18,6 +18,8 @@ set_if_missing CHAPTERWISE_PUBLIC_URL https://read.aminghuf.com
 set_if_missing BOOKS_HOST_PATH /root/bookorbit/books
 set_if_missing CHAPTERWISE_MODEL deepseek-flash
 set_if_missing TZ Europe/Rome
+set_if_missing CHAPTERWISE_TIMEZONE Europe/Rome
+set_if_missing CHAPTERWISE_DELIVERY_TIME 07:30
 set_if_missing POSTGRES_PASSWORD "$(openssl rand -hex 24)"
 set_if_missing CHAPTERWISE_SECRET_KEY "$(openssl rand -hex 32)"
 
@@ -29,6 +31,15 @@ fi
 if ! grep -q '^DEEPSEEK_API_KEY=' "$ENV"; then
   read -rsp "DeepSeek API key (Enter to add later): " key; echo
   echo "DEEPSEEK_API_KEY=$key" >> "$ENV"
+fi
+
+if ! grep -q '^TELEGRAM_BOT_TOKEN=' "$ENV"; then
+  read -rsp "Telegram bot token from @BotFather (Enter to add later): " token; echo
+  echo "TELEGRAM_BOT_TOKEN=$token" >> "$ENV"
+fi
+if ! grep -q '^TELEGRAM_CHAT_ID=' "$ENV"; then
+  read -rp "Your Telegram chat ID (Enter if unknown: send /start to the bot and it will tell you): " chat
+  echo "TELEGRAM_CHAT_ID=$chat" >> "$ENV"
 fi
 
 [ -d /root/bookorbit/books ] || echo "Warning: /root/bookorbit/books doesn't exist; set BOOKS_HOST_PATH in $ENV"

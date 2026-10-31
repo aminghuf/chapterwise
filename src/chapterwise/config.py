@@ -44,6 +44,11 @@ class Settings:
     admin_password: str | None = None
     public_url: str = "http://localhost:8100"
     scan_interval: int = 600  # seconds between library scans
+    # Telegram delivery
+    telegram_token: str | None = None
+    telegram_chat_id: int | None = None  # the only chat the bot answers
+    delivery_time: str = "07:30"  # local time of the daily delivery
+    timezone: str = "Europe/Rome"
 
     @property
     def secure_cookies(self) -> bool:
@@ -65,6 +70,10 @@ class Settings:
             admin_password=env("CHAPTERWISE_ADMIN_PASSWORD") or None,
             public_url=(env("CHAPTERWISE_PUBLIC_URL") or "http://localhost:8100").rstrip("/"),
             scan_interval=_int("CHAPTERWISE_SCAN_INTERVAL", 600),
+            telegram_token=env("TELEGRAM_BOT_TOKEN") or None,
+            telegram_chat_id=int(chat) if (chat := (env("TELEGRAM_CHAT_ID") or "").strip()) else None,
+            delivery_time=(env("CHAPTERWISE_DELIVERY_TIME") or "07:30").strip(),
+            timezone=(env("CHAPTERWISE_TIMEZONE") or env("TZ") or "Europe/Rome").strip(),
         )
 
     def require(self, *names: str) -> None:
@@ -73,6 +82,7 @@ class Settings:
             "database_url": "DATABASE_URL",
             "secret_key": "CHAPTERWISE_SECRET_KEY",
             "admin_password": "CHAPTERWISE_ADMIN_PASSWORD",
+            "telegram_token": "TELEGRAM_BOT_TOKEN",
         }
         missing = [env_names.get(n, n) for n in names if not getattr(self, n)]
         if missing:

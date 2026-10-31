@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Double,
     ForeignKey,
     Index,
@@ -21,9 +22,10 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
-from sqlalchemy.types import DateTime
+from sqlalchemy.types import Date, DateTime
 
 ACTIVE_JOB_STATUSES = ("queued", "running")
+OPEN_SUBSCRIPTION_STATUSES = ("active", "paused")
 
 
 class Base(DeclarativeBase):
@@ -114,6 +116,48 @@ class CacheEntry(Base):
     key: Mapped[dict[str, Any]] = mapped_column(JSONB)
     value: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Subscription(Base):
+    """A book being read on Telegram, one section a day."""
+
+    __tablename__ = "subscriptions"
+    __table_args__ = (
+        # One open (active or paused) subscription per book.
+        Index(
+            "subscriptions_one_open_per_book",
+            "document_id",
+            unique=True,
+            postgresql_where=text("status IN ('active', 'paused')"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), index=True)
+    mode: Mapped[str] = mapped_column(String(16), default="summary")  # "dose" arrives in Phase 4
+    position: Mapped[int] = mapped_column(Integer, default=0)  # next section to deliver
+    status: Mapped[str] = mapped_column(String(16), default="active")  # active|paused|finished|stopped
+    wants_next: Mapped[bool] = mapped_column(Boolean, default=False)  # "Next" pressed, waiting for summary
+    last_delivered_on: Mapped[date | None] = mapped_column(Date)  # local date of the last daily delivery
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    document: Mapped[DocumentRow] = relationship()
+
+
+class Delivery(Base):
+    __tablename__ = "deliveries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    subscription_id: Mapped[int] = mapped_column(
+        ForeignKey("subscriptions.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(16))  # scheduled | manual
+    message_id: Mapped[int | None] = mapped_column(BigInteger)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 def make_engine(database_url: str) -> Engine:

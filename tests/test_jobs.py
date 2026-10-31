@@ -87,3 +87,12 @@ def test_requeue_stale(sessions):
         jobs.claim(s)
         assert jobs.requeue_stale(s) == 1
         assert jobs.claim(s) is not None
+
+
+def test_enqueue_keeps_working_after_many_executions(sessions):
+    """Regression: a parameterized ON CONFLICT predicate broke once Postgres switched to a generic plan."""
+    with sessions() as s:
+        for n in range(30):
+            assert jobs.enqueue(s, "summarize", {"n": n}, dedupe_key=f"k{n}")
+            assert not jobs.enqueue(s, "summarize", {"n": n}, dedupe_key=f"k{n}")
+        s.commit()
