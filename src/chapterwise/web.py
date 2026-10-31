@@ -16,7 +16,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
 
-from chapterwise import jobs
+from chapterwise import delivery, jobs
 from chapterwise.cache import PostgresCache, cache_digest
 from chapterwise.config import Settings
 from chapterwise.db import (
@@ -254,7 +254,31 @@ def create_app(settings: Settings, sessions: sessionmaker | None = None) -> Fast
             missing_count=len(missing),
             missing_tokens=sum(s.tokens for s in missing),
             refresh=doc.status == "pending" or bool(active),
+            telegram=bool(settings.telegram_token),
+            subscription=delivery.open_subscription(session, doc.id),
+            delivery_time=settings.delivery_time,
         )
+
+    # --- daily reading on Telegram ------------------------------------------------------------------------
+
+    @app.post("/b/{document_id}/subscribe")
+    def subscribe(document_id: int, session: DB, _user: User, start: Annotated[int, Form()] = 0):
+        try:
+            delivery.subscribe(session, document_id, start)
+        except delivery.SubscriptionError as exc:
+            raise HTTPException(400, str(exc)) from None
+        return RedirectResponse(f"/b/{document_id}", status_code=303)
+
+    @app.post("/subscriptions/{subscription_id}/{action}")
+    def change_subscription(subscription_id: int, action: str, session: DB, _user: User):
+        status = {"pause": "paused", "resume": "active", "stop": "stopped"}.get(action)
+        if status is None:
+            raise HTTPException(404)
+        try:
+            sub = delivery.set_status(session, subscription_id, status)
+        except delivery.SubscriptionError as exc:
+            raise HTTPException(400, str(exc)) from None
+        return RedirectResponse(f"/b/{sub.document_id}", status_code=303)
 
     @app.post("/b/{document_id}/summarize")
     def summarize(document_id: int, session: DB, _user: User, sections: Annotated[str, Form()]):

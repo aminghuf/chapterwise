@@ -13,6 +13,26 @@
   <p class="notice">This file is no longer in the books folder. Existing summaries are kept.</p>
 {% endif %}
 
+{% if rows and telegram %}
+<div class="toolbar">
+  {% if subscription %}
+    <span>📬 Daily on Telegram at {{ delivery_time }}: next is section {{ subscription.position }}{% if subscription.status == "paused" %} <span class="pill">paused</span>{% endif %}</span>
+    {% if subscription.status == "paused" %}
+      <form class="inline" method="post" action="/subscriptions/{{ subscription.id }}/resume"><button class="quiet" type="submit">Resume</button></form>
+    {% else %}
+      <form class="inline" method="post" action="/subscriptions/{{ subscription.id }}/pause"><button class="quiet" type="submit">Pause</button></form>
+    {% endif %}
+    <form class="inline" method="post" action="/subscriptions/{{ subscription.id }}/stop"><button class="quiet" type="submit">Stop</button></form>
+  {% else %}
+    <form class="inline" method="post" action="/b/{{ doc.id }}/subscribe">
+      <input type="hidden" name="start" value="0">
+      <button type="submit" {% if not api_key_set %}disabled{% endif %}>📬 Read daily on Telegram</button>
+    </form>
+    <span class="muted small">one section every morning at {{ delivery_time }}</span>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if rows %}
 <div class="toolbar">
   {% if missing_count %}

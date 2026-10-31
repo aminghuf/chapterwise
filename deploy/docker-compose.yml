@@ -5,6 +5,7 @@ name: chapterwise
 x-app: &app
   image: ${IMAGE:?set by image.env}
   restart: unless-stopped
+  init: true  # forwards stop signals and reaps child processes
   env_file: .env
   environment:
     DATABASE_URL: postgresql+psycopg://chapterwise:${POSTGRES_PASSWORD:?}@db:5432/chapterwise
@@ -73,6 +74,15 @@ services:
     healthcheck:
       disable: true
     stop_grace_period: 60s  # let a running summary finish
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  bot:
+    <<: *app
+    command: ["chapterwise", "bot"]
+    healthcheck:
+      disable: true
     depends_on:
       migrate:
         condition: service_completed_successfully

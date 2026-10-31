@@ -132,3 +132,30 @@ def test_jobs_page_and_retry(logged_in, library, sessions):
 def test_logout(logged_in):
     logged_in.post("/logout")
     assert logged_in.get("/", follow_redirects=False).status_code == 303
+
+
+def test_telegram_subscription_controls(library, sessions, settings):
+    from dataclasses import replace
+
+    client = TestClient(create_app(replace(settings, telegram_token="123:abc"), sessions))
+    client.post("/login", data={"password": "correct horse"})
+    doc_id = epub_id(sessions)
+    assert "Read daily on Telegram" in client.get(f"/b/{doc_id}").text
+
+    client.post(f"/b/{doc_id}/subscribe", data={"start": "0"})
+    page = client.get(f"/b/{doc_id}").text
+    assert "Daily on Telegram at 07:30" in page and "Pause" in page
+
+    with sessions() as s:
+        from chapterwise.db import Subscription
+
+        sub_id = s.scalar(select(Subscription.id))
+    client.post(f"/subscriptions/{sub_id}/pause")
+    assert "paused" in client.get(f"/b/{doc_id}").text
+    client.post(f"/subscriptions/{sub_id}/stop")
+    assert "Read daily on Telegram" in client.get(f"/b/{doc_id}").text
+    assert client.post(f"/subscriptions/{sub_id}/explode").status_code == 404
+
+
+def test_subscription_controls_hidden_without_telegram(logged_in, library, sessions):
+    assert "Read daily on Telegram" not in logged_in.get(f"/b/{epub_id(sessions)}").text

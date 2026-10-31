@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "chapterwise"
-version = "0.2.0"
+version = "0.3.0"
 description = "Summarize your books chapter by chapter with an LLM and read them in micro-doses."
 readme = "README.md"
 license = "MIT"
@@ -24,8 +24,10 @@ dependencies = [
   "pypdf>=5.0",
   "python-dotenv>=1.0",
   "python-multipart>=0.0.9",
+  "python-telegram-bot[job-queue]>=21.0",
   "sqlalchemy>=2.0",
   "typer>=0.12",
+  "tzdata>=2024.1",   # time zones in slim containers
   "uvicorn>=0.30",
 ]
 

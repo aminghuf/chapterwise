@@ -1,8 +1,9 @@
-"""Command line: inspect and summarize books, and run the service (migrate, serve, worker)."""
+"""Command line: inspect and summarize books, and run the service (migrate, serve, worker, bot)."""
 
 from __future__ import annotations
 
 import logging
+import signal
 from pathlib import Path
 from typing import Annotated
 
@@ -198,6 +199,26 @@ def worker() -> None:
     settings.require("database_url")
     _logging()
     Worker(settings, make_session_factory(make_engine(settings.database_url))).run_forever()
+
+
+@app.command()
+def bot() -> None:
+    """Run the Telegram bot: daily deliveries, /books, /reading, /next."""
+    from chapterwise.bot import run
+    from chapterwise.db import make_engine, make_session_factory
+
+    settings = Settings.from_env()
+    settings.require("database_url")
+    _logging()
+    if not settings.telegram_token:
+        # Idle instead of crash-looping in Docker until a token is configured.
+        logging.getLogger(__name__).warning("TELEGRAM_BOT_TOKEN is not set; the bot is idle")
+        stop = {signal.SIGTERM, signal.SIGINT}
+        signal.pthread_sigmask(signal.SIG_BLOCK, stop)
+        signal.sigwait(stop)
+        return
+    logging.getLogger("httpx").setLevel(logging.WARNING)  # don't log every poll (URLs contain the token)
+    run(settings, make_session_factory(make_engine(settings.database_url)))
 
 
 class _NoLLM:
