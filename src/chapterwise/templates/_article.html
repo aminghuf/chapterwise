@@ -1,0 +1,131 @@
+{# The summary article, shared by the logged-in section page and the signed read link (Telegram).
+   Context: doc, section, total, card, legacy, state, prev_href, next_href, prev, next, back_href,
+   article_key, summarize_form, upgrade_form. #}
+<article class="article"{% if card %} data-article="{{ article_key }}"{% endif %}>
+  <p class="crumbs focus-hide">
+    {% if back_href %}<a href="{{ back_href }}">← {{ doc.title }}</a>{% else %}<span class="muted">{{ doc.title }}</span>{% endif %}
+  </p>
+  <h1 class="focus-hide">{{ section.title }}</h1>
+  <div class="meta focus-hide">
+    <span>Section {{ section.position + 1 }} of {{ total }}</span>
+    {% if card %}<span>⏱ {{ card.minutes }} min read</span><span>{{ card.ideas|length }} key ideas</span>{% endif %}
+    <span>{{ section.words|num }} words in the original</span>
+  </div>
+  <div class="bookbar focus-hide" role="progressbar" aria-label="Position in the book"
+       aria-valuemin="0" aria-valuemax="{{ total }}" aria-valuenow="{{ section.position + 1 }}">
+    <span style="width: {{ ((section.position + 1) * 100 / total)|round(1) if total else 0 }}%"></span>
+  </div>
+
+  {% if card %}
+    <div class="controls">
+      <button type="button" class="quiet" data-focus aria-pressed="false">🎯 One idea at a time</button>
+      <span class="spacer"></span>
+      <span class="got-count" aria-live="polite"></span>
+      <button type="button" class="quiet" data-scale="-1" aria-label="Smaller text">A−</button>
+      <button type="button" class="quiet" data-scale="1" aria-label="Larger text">A+</button>
+    </div>
+
+    <div class="block tldr focus-hide">
+      <span class="label">TL;DR</span>
+      <p>{{ card.tldr|emph }}</p>
+    </div>
+    {% if card.why %}
+    <div class="block why focus-hide">
+      <span class="icon" aria-hidden="true">💡</span>
+      <p><span class="label">Why it matters</span>{{ card.why|emph }}</p>
+    </div>
+    {% endif %}
+
+    <h2 class="section-title focus-hide">Key ideas</h2>
+    <ol class="ideas">
+      {% for idea in card.ideas %}
+      <li class="block idea">
+        <div class="idea-head">
+          <span class="num" aria-hidden="true">{{ loop.index }}</span>
+          <h3>{% if idea.emoji %}<span class="emoji" aria-hidden="true">{{ idea.emoji }}</span> {% endif %}{{ idea.title|emph }}</h3>
+        </div>
+        <p class="point">{{ idea.point|emph }}</p>
+        {% if idea.example %}
+        <details>
+          <summary>Example</summary>
+          <p class="example">{{ idea.example|emph }}</p>
+        </details>
+        {% endif %}
+        <button type="button" class="quiet got-it" aria-pressed="false">Got it</button>
+      </li>
+      {% endfor %}
+    </ol>
+    <div class="focus-nav">
+      <button type="button" class="quiet" data-focus-prev>← Back</button>
+      <span class="focus-step"></span>
+      <button type="button" data-focus-next>Next →</button>
+    </div>
+
+    {% if card.terms %}
+    <h2 class="section-title focus-hide">Words to know</h2>
+    <div class="terms focus-hide">
+      {% for term in card.terms %}
+      <details class="term"><summary>{{ term.term }}</summary><p>{{ term.meaning|emph }}</p></details>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if card.takeaway %}
+    <div class="block takeaway focus-hide" style="margin-top: 22px">
+      <span class="label">🎯 Takeaway</span>
+      <p>{{ card.takeaway|emph }}</p>
+    </div>
+    {% endif %}
+    {% if card.action %}
+    <div class="block try focus-hide">
+      <span aria-hidden="true">✅</span>
+      <p><span class="label">Try this today</span>{{ card.action|emph }}</p>
+    </div>
+    {% endif %}
+
+    {% if card.checks %}
+    <h2 class="section-title focus-hide">Quick check</h2>
+    <div class="focus-hide">
+      {% for check in card.checks %}
+      <details class="qa">
+        <summary>{{ check.question|emph }}<span class="hint">tap to reveal</span></summary>
+        <p class="answer">{{ check.answer|emph }}</p>
+      </details>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+  {% elif legacy %}
+    <div class="block legacy">{{ legacy|markdown|safe }}</div>
+    {% if upgrade_form %}
+    <form method="post" action="/b/{{ doc.id }}/summarize">
+      <input type="hidden" name="sections" value="{{ section.position }}">
+      <button type="submit" {% if not api_key_set %}disabled{% endif %}>✨ Redo in the new, easier-to-read format</button>
+    </form>
+    {% endif %}
+
+  {% elif state == "running" %}
+    <p class="notice">Summarizing now… this page refreshes by itself.</p>
+  {% elif state == "queued" %}
+    <p class="notice">Queued for summarizing… this page refreshes by itself.</p>
+  {% elif summarize_form %}
+    <form method="post" action="/b/{{ doc.id }}/summarize">
+      <input type="hidden" name="sections" value="{{ section.position }}">
+      <button type="submit" {% if not api_key_set %}disabled{% endif %}>Summarize this section</button>
+    </form>
+  {% else %}
+    <p class="notice">The summary is still being prepared. Check back in a minute.</p>
+  {% endif %}
+
+  <details class="original focus-hide">
+    <summary>Original text</summary>
+    <pre>{{ section.text }}</pre>
+  </details>
+
+  {% if prev or next %}
+  <nav class="chapters focus-hide" aria-label="Sections">
+    {% if prev %}<a href="{{ prev_href }}"><span class="dir">← Previous</span>{{ prev.title }}</a>{% endif %}
+    {% if next %}<a class="next" href="{{ next_href }}"><span class="dir">Next →</span>{{ next.title }}</a>{% endif %}
+  </nav>
+  {% endif %}
+</article>

@@ -21,7 +21,7 @@ class LLM(Protocol):
     @property
     def model(self) -> str: ...
 
-    def complete(self, system: str, user: str) -> Completion: ...
+    def complete(self, system: str, user: str, json_mode: bool = False) -> Completion: ...
 
 
 class OpenAICompatibleLLM:
@@ -36,10 +36,12 @@ class OpenAICompatibleLLM:
     def model(self) -> str:
         return self._model
 
-    def complete(self, system: str, user: str) -> Completion:
+    def complete(self, system: str, user: str, json_mode: bool = False) -> Completion:
+        extra = {"response_format": {"type": "json_object"}} if json_mode else {}
         response = self._client.chat.completions.create(
             model=self._model,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+            **extra,
         )
         if not response.choices:
             raise LLMError("The model returned no choices")

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "chapterwise"
-version = "0.3.0"
+version = "0.4.0"
 description = "Summarize your books chapter by chapter with an LLM and read them in micro-doses."
 readme = "README.md"
 license = "MIT"

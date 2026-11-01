@@ -91,11 +91,35 @@ chapterwise migrate
 chapterwise serve & chapterwise worker
 ```
 
+## Reading experience
+
+Summaries are written for easy reading, including with ADHD:
+- **Lead with the point:** short sentences, one idea per sentence, plain words, key words in bold.
+- **Structured cards:** the model returns JSON, which is validated, retried once, and falls back to
+  Markdown if still unusable. Each card has:
+  - a one-line **TL;DR** and **why it matters**
+  - 3–6 **key ideas**, each with an everyday **example**
+  - **words to know**
+  - a **takeaway** and one tiny **"try this"**
+  - 2–3 **quick-check** questions
+- **Interactive article:**
+  - **Focus mode** shows one idea at a time (arrow keys work).
+  - **"Got it"** checks track your progress and are remembered on that device.
+  - Examples and quiz answers open when you tap them.
+  - Text size is adjustable.
+  - Everything is readable without JavaScript.
+- **Old summaries are still shown:** ones made before this format display as before, with a button
+  to redo them in the new format (per section or per book). Long chapters reuse their cached notes,
+  so only the final call is paid for again.
+
 ## Daily reading on Telegram
 
 Pick a book with `/books` (or **Read daily on Telegram** on its web page). Every morning at
 `CHAPTERWISE_DELIVERY_TIME` (07:30 Europe/Rome by default) the bot sends the next section's summary,
-with buttons to get the **Next** one right away, **Pause**, or open it on the web.
+as a short card (TL;DR, key ideas, takeaway), with buttons for **Next**, **Pause** and
+**📖 Read the article**. That button opens the full interactive article inside Telegram as a Mini App,
+using a signed link (valid 120 days, read-only, one section) so no login is needed. It also follows
+Telegram's light or dark theme.
 
 - **Summaries are prepared ahead:** the next 2 sections are queued for the worker, so the morning
   message is ready on time.

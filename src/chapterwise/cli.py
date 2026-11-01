@@ -15,6 +15,7 @@ from chapterwise.llm import LLMError, OpenAICompatibleLLM
 from chapterwise.models import Document
 from chapterwise.parsers import ParseError, parse
 from chapterwise.summarize import Summarizer, Usage
+from chapterwise.summary_format import card_to_markdown, try_parse_card
 
 app = typer.Typer(
     add_completion=False,
@@ -139,7 +140,8 @@ def summarize(
             typer.echo(f"Error from the model on section {i}: {exc}", err=True)
             raise typer.Exit(1) from exc
         total += usage
-        blocks.append(f"## {section.title}\n\n{summary}")
+        card = try_parse_card(summary)
+        blocks.append(f"## {section.title}\n\n{card_to_markdown(card) if card else summary}")
 
     markdown = "\n\n".join(blocks) + "\n"
     if out:
@@ -231,5 +233,5 @@ class _NoLLM:
     def model(self) -> str:
         return self._model
 
-    def complete(self, system: str, user: str):
+    def complete(self, system: str, user: str, json_mode: bool = False):
         raise RuntimeError("dry run must not call the model")

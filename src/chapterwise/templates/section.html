@@ -1,32 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ section.title }} · {{ doc.title }}{% endblock %}
-{% block content %}
-<p class="small"><a href="/b/{{ doc.id }}#s{{ section.position }}">← {{ doc.title }}</a></p>
-<h1>{{ section.title }}</h1>
-<p class="muted small">{{ section.words|num }} words in the original</p>
-
-<article class="reading">
-{% if summary %}
-  {{ summary|markdown|safe }}
-{% elif state == "running" %}
-  <p class="notice">Summarizing now… this page refreshes by itself.</p>
-{% elif state == "queued" %}
-  <p class="notice">Queued for summarizing… this page refreshes by itself.</p>
-{% else %}
-  <form method="post" action="/b/{{ doc.id }}/summarize">
-    <input type="hidden" name="sections" value="{{ section.position }}">
-    <button type="submit" {% if not api_key_set %}disabled{% endif %}>Summarize this section</button>
-  </form>
-{% endif %}
-</article>
-
-<details>
-  <summary>Original text</summary>
-  <pre>{{ section.text }}</pre>
-</details>
-
-<nav class="pager">
-  <span>{% if prev %}<a href="/b/{{ doc.id }}/s/{{ prev.position }}">← {{ prev.title }}</a>{% endif %}</span>
-  <span>{% if next %}<a href="/b/{{ doc.id }}/s/{{ next.position }}">{{ next.title }} →</a>{% endif %}</span>
-</nav>
+{% block head %}
+<link rel="stylesheet" href="/static/article.css">
+<script src="/static/reader.js" defer></script>
 {% endblock %}
+{% block content %}{% include "_article.html" %}{% endblock %}

@@ -1,4 +1,4 @@
-"""Turn Markdown summaries into the small HTML subset Telegram accepts.
+"""Turn summaries (cards or Markdown) into the small HTML subset Telegram accepts.
 
 Telegram supports only <b> <i> <u> <s> <code> <pre> <a> <blockquote>, no lists or headings, and caps a
 message at 4096 characters. Lists become bullet lines, headings become bold lines, and long summaries
@@ -7,10 +7,13 @@ are cut at a block boundary so no tag is ever left open.
 
 from __future__ import annotations
 
+import re
 from html import escape
 
 from bs4 import BeautifulSoup, NavigableString, Tag
 from markdown_it import MarkdownIt
+
+from chapterwise.summary_format import Card, strip_bold
 
 MESSAGE_BUDGET = 3800  # leaves room under Telegram's 4096-character limit
 
@@ -105,3 +108,38 @@ def build_message(header: str, markdown: str, budget: int = MESSAGE_BUDGET) -> t
 def to_plain_text(html: str) -> str:
     """Fallback if Telegram ever rejects the HTML: same content without markup."""
     return BeautifulSoup(html, "html.parser").get_text()
+
+
+_BOLD = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _tg(text: str) -> str:
+    """Escape model text for Telegram HTML and keep its **bold** markers as <b>."""
+    return _BOLD.sub(r"<b>\1</b>", escape(text or "", quote=False))
+
+
+def card_blocks(card: Card) -> list[str]:
+    """A short, scannable Telegram version of a summary card; the full article is one tap away."""
+    blocks = [f"💡 <b>TL;DR</b>\n{_tg(card.tldr)}"]
+    ideas = [
+        f"{idea.emoji or '•'} <b>{_tg(strip_bold(idea.title))}</b>\n{_tg(idea.point)}" for idea in card.ideas
+    ]
+    blocks.append("<b>Key ideas</b>\n\n" + "\n\n".join(ideas))
+    if card.takeaway:
+        blocks.append(f"🎯 <b>Takeaway:</b> {_tg(card.takeaway)}")
+    if card.action:
+        blocks.append(f"✅ <b>Try this:</b> {_tg(card.action)}")
+    return blocks
+
+
+def build_card_message(header: str, card: Card, budget: int = MESSAGE_BUDGET) -> tuple[str, bool]:
+    """Header (already HTML) + card blocks, cut at a block boundary to fit. Returns (html, truncated)."""
+    parts = [header]
+    used = len(header)
+    for block in card_blocks(card):
+        if used + len(block) + 2 > budget:
+            parts.append("… (open the article for the rest)")
+            return "\n\n".join(parts), True
+        parts.append(block)
+        used += len(block) + 2
+    return "\n\n".join(parts), False

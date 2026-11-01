@@ -18,6 +18,7 @@ from telegram import (
     InlineKeyboardMarkup,
     LinkPreviewOptions,
     Update,
+    WebAppInfo,
 )
 from telegram.constants import ParseMode
 from telegram.error import BadRequest
@@ -40,17 +41,16 @@ COMMANDS = [
 ]
 
 
+def button(label: str, target: str) -> InlineKeyboardButton:
+    if target.startswith("app:"):  # opens the page inside Telegram (Mini App)
+        return InlineKeyboardButton(label, web_app=WebAppInfo(url=target[4:]))
+    if target.startswith("url:"):
+        return InlineKeyboardButton(label, url=target[4:])
+    return InlineKeyboardButton(label, callback_data=target[3:])
+
+
 def keyboard(buttons: list[list[delivery.Button]]) -> InlineKeyboardMarkup | None:
-    rows = [
-        [
-            InlineKeyboardButton(label, url=target[4:])
-            if target.startswith("url:")
-            else InlineKeyboardButton(label, callback_data=target[3:])
-            for label, target in row
-        ]
-        for row in buttons
-        if row
-    ]
+    rows = [[button(label, target) for label, target in row] for row in buttons if row]
     return InlineKeyboardMarkup(rows) if rows else None
 
 

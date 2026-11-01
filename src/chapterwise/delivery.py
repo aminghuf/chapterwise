@@ -21,8 +21,10 @@ from chapterwise import jobs
 from chapterwise.cache import PostgresCache
 from chapterwise.config import Settings
 from chapterwise.db import OPEN_SUBSCRIPTION_STATUSES, Delivery, DocumentRow, SectionRow, Subscription
-from chapterwise.summarize import cache_key
-from chapterwise.telegram_format import build_message
+from chapterwise.links import read_url
+from chapterwise.summarize import find_summary
+from chapterwise.summary_format import try_parse_card
+from chapterwise.telegram_format import build_card_message, build_message
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +65,7 @@ class Item:
     total: int
     summary: str
     kind: str  # scheduled | manual
+    summary_format: str = "markdown"  # card | markdown
 
     @property
     def is_last(self) -> bool:
@@ -181,8 +184,8 @@ def due_items(
         if doc is None or section is None:  # past the end, e.g. after a re-parse shortened the book
             sub.status, sub.wants_next = "finished", False
             continue
-        entry = cache.get(cache_key("section", section.text_sha256, doc.title, section.title, settings.model))
-        if entry is None:
+        stored = find_summary(cache, section.text_sha256, doc.title, section.title, settings.model)
+        if stored is None:
             prefetch(session, sub)
             continue
         items.append(
@@ -193,8 +196,9 @@ def due_items(
                 section_title=section.title,
                 position=sub.position,
                 total=total,
-                summary=entry["text"],
+                summary=stored.text,
                 kind="scheduled" if scheduled else "manual",
+                summary_format=stored.format,
             )
         )
     session.commit()
@@ -223,7 +227,7 @@ def record_delivery(
 
 # --- sending ---------------------------------------------------------------------------------------------
 
-Button = tuple[str, str]  # (label, "cb:<data>" or "url:<https://...>")
+Button = tuple[str, str]  # (label, "cb:<data>", "url:<https://...>" or "app:<https://...>" for a Mini App)
 
 
 class Sender(Protocol):
@@ -233,19 +237,28 @@ class Sender(Protocol):
 
 
 def message_for(item: Item, settings: Settings) -> tuple[str, list[list[Button]]]:
+    card = try_parse_card(item.summary) if item.summary_format == "card" else None
+    meta = f"{item.position + 1}/{item.total}" + (f" · ⏱ {card.minutes} min" if card else "")
     header = (
-        f"<b>{escape(item.book_title, quote=False)}</b>\n"
-        f"{escape(item.section_title, quote=False)} · {item.position + 1}/{item.total}"
+        f"<b>{escape(item.book_title, quote=False)}</b>\n{escape(item.section_title, quote=False)} · {meta}"
     )
-    html, _truncated = build_message(header, item.summary)
+    html, _truncated = build_card_message(header, card) if card else build_message(header, item.summary)
+
+    buttons: list[list[Button]] = []
+    # Telegram only opens public https pages. With the secret key, the article opens inside Telegram
+    # through a signed link, with no login; without it, the normal (login) page opens in the browser.
+    if settings.public_url.startswith("https://"):
+        if settings.secret_key:
+            url = read_url(settings.public_url, settings.secret_key, item.document_id, item.position)
+            buttons.append([("📖 Read the article", f"app:{url}")])
+        else:
+            url = f"{settings.public_url}/b/{item.document_id}/s/{item.position}"
+            buttons.append([("📖 Open on the web", f"url:{url}")])
     row: list[Button] = []
     if not item.is_last:
         row.append(("Next ▶", f"cb:next:{item.subscription_id}"))
     row.append(("Pause", f"cb:pause:{item.subscription_id}"))
-    buttons = [row]
-    if settings.public_url.startswith("https://"):  # Telegram rejects non-public button URLs
-        url = f"{settings.public_url}/b/{item.document_id}/s/{item.position}"
-        buttons.append([("Open on the web", f"url:{url}")])
+    buttons.append(row)
     return html, buttons
 
 
