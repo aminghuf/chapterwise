@@ -14,7 +14,7 @@ from sqlalchemy import select
 from telegram import Update
 
 from chapterwise import delivery
-from chapterwise.bot import ChapterwiseBot, TelegramSender
+from chapterwise.bot import ChapterwiseBot, TelegramSender, keyboard
 from chapterwise.db import DocumentRow, Subscription
 from chapterwise.worker import Worker
 from tests.conftest import FakeLLM
@@ -210,6 +210,15 @@ def test_pick_a_book_then_next(sessions, bot_settings, worker, api):
     assert message["text"].startswith("<b>The Test Book</b>\nChapter 1 · 1/3")
     buttons = json.loads(message["reply_markup"])["inline_keyboard"]
     assert buttons[0][0] == {"text": "Next ▶", "callback_data": f"next:{sub.id}"}
+
+
+def test_article_button_opens_inside_telegram():
+    markup = keyboard(
+        [[("📖 Read the article", "app:https://read.example.com/r/abc")], [("Pause", "cb:pause:1")]]
+    )
+    data = markup.to_dict()["inline_keyboard"]
+    assert data[0][0] == {"text": "📖 Read the article", "web_app": {"url": "https://read.example.com/r/abc"}}
+    assert data[1][0] == {"text": "Pause", "callback_data": "pause:1"}
 
 
 def test_reading_pause_and_stop(sessions, bot_settings, worker, api):

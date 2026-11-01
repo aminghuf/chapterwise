@@ -99,19 +99,51 @@ def _wrap(text: str, words_per_line: int) -> list[str]:
     return [" ".join(tokens[i : i + words_per_line]) for i in range(0, len(tokens), words_per_line)]
 
 
+def card_json(tldr: str = "The chapter in one line.", **overrides) -> str:
+    """A valid summary card, as the model would return it."""
+    import json
+
+    card = {
+        "tldr": tldr,
+        "why_it_matters": "It changes how you plan your day.",
+        "key_ideas": [
+            {
+                "emoji": "🧠",
+                "title": "Attention is limited",
+                "point": "You **can't** focus on everything.",
+                "example": "Like a phone battery that drains.",
+            },
+            {
+                "emoji": "⏱️",
+                "title": "Short sprints work",
+                "point": "Work in **25-minute** blocks.",
+                "example": "Set a kitchen timer.",
+            },
+        ],
+        "terms": [{"term": "Pomodoro", "meaning": "a 25-minute focused work block"}],
+        "takeaway": "Protect your focus like money.",
+        "try_this": "Set one timer today.",
+        "quick_check": [{"question": "How long is a sprint?", "answer": "25 minutes."}],
+    }
+    card.update(overrides)
+    return json.dumps(card, ensure_ascii=False)
+
+
 class FakeLLM:
     """Returns predictable text and records every prompt it receives."""
 
     def __init__(self, model: str = "fake-model"):
         self._model = model
         self.calls: list[str] = []
+        self.json_modes: list[bool] = []
 
     @property
     def model(self) -> str:
         return self._model
 
-    def complete(self, system: str, user: str) -> Completion:
+    def complete(self, system: str, user: str, json_mode: bool = False) -> Completion:
         self.calls.append(user)
+        self.json_modes.append(json_mode)
         if "(part " in user:
             kind = "notes"
         elif "<notes>" in user and "Condense" in user:
@@ -120,7 +152,10 @@ class FakeLLM:
             kind = "merged summary"
         else:
             kind = "summary"
-        return Completion(text=f"{kind} #{len(self.calls)}", tokens_in=len(user) // 4, tokens_out=10)
+        text = f"{kind} #{len(self.calls)}"
+        if json_mode:  # final summaries are JSON cards; the label goes in the TL;DR
+            text = card_json(tldr=text)
+        return Completion(text=text, tokens_in=len(user) // 4, tokens_out=10)
 
 
 @pytest.fixture

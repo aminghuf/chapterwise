@@ -1,0 +1,112 @@
+/* The summary article: calm, chunked, one idea per card. Works without JavaScript; reader.js adds
+   focus mode, "got it" checks, text size and Telegram theme colors. */
+
+:root {
+  --reading-scale: 1;
+  --tint: color-mix(in srgb, var(--accent) 9%, var(--surface));
+  --tint-strong: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  --radius: 14px;
+}
+
+/* The app's generic <details> styling (a divider above each one) doesn't belong inside the article. */
+.article :where(details) { margin-top: 0; border-top: 0; padding-top: 0; }
+
+.article { max-width: 680px; margin: 0 auto; font-size: calc(1.0625rem * var(--reading-scale)); }
+.article p { margin: 0; }
+.article strong { font-weight: 650; background: linear-gradient(transparent 62%, color-mix(in srgb, var(--accent) 22%, transparent) 0); }
+
+.crumbs { font-size: 0.875rem; margin-bottom: 10px; }
+.article h1 { font-size: 1.75em; line-height: 1.2; margin: 0 0 10px; letter-spacing: -0.015em; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--muted); font-size: 0.875rem; }
+.bookbar { height: 4px; border-radius: 99px; background: var(--line); margin: 14px 0 22px; overflow: hidden; }
+.bookbar > span { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+
+/* Controls appear only when the script runs. */
+.controls { display: none; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0 0 18px; }
+.js .controls { display: flex; }
+.controls button { padding: 6px 12px; border-radius: 99px; }
+.controls .spacer { flex: 1; }
+.got-count { font-size: 0.875rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.block { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; margin: 0 0 14px; }
+.label { display: block; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+
+.tldr { background: var(--tint-strong); border-color: transparent; font-size: 1.15em; line-height: 1.45; }
+.tldr .label { color: var(--accent); }
+.why { display: flex; gap: 10px; align-items: flex-start; background: transparent; border-style: dashed; }
+.why .icon { font-size: 1.2em; line-height: 1.3; }
+
+.section-title { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 26px 0 10px; }
+
+.ideas { list-style: none; padding: 0; margin: 0; counter-reset: idea; }
+.idea { position: relative; padding-left: 18px; transition: opacity 0.2s, border-color 0.2s; }
+.idea-head { display: flex; gap: 10px; align-items: baseline; margin-bottom: 6px; }
+.idea .num { flex: none; width: 1.9em; height: 1.9em; border-radius: 50%; display: inline-grid; place-items: center;
+             background: var(--tint-strong); color: var(--accent); font-weight: 700; font-size: 0.85em; transform: translateY(-1px); }
+.idea h3 { margin: 0; font-size: 1.05em; line-height: 1.3; }
+.idea .emoji { margin-right: 2px; }
+.idea .point { line-height: 1.6; }
+.idea details { margin-top: 10px; }
+.idea summary { cursor: pointer; color: var(--accent); font-size: 0.9em; font-weight: 600; list-style: none; }
+.idea summary::-webkit-details-marker { display: none; }
+.idea summary::before { content: "▸ "; }
+.idea details[open] summary::before { content: "▾ "; }
+.idea .example { margin-top: 6px; padding: 10px 12px; border-radius: 10px; background: var(--tint); line-height: 1.55; }
+.idea.done { border-color: color-mix(in srgb, var(--ok) 55%, var(--line)); }
+.idea.done .num { background: var(--ok); color: var(--surface); }
+.got-it { display: none; margin-top: 12px; }
+.js .got-it { display: inline-block; }
+.got-it[aria-pressed="true"] { background: var(--ok); border-color: var(--ok); color: var(--surface); }
+
+.terms { display: flex; flex-wrap: wrap; gap: 8px; }
+.term { border: 1px solid var(--line); border-radius: 99px; background: var(--surface); padding: 4px 12px; }
+.term[open] { border-radius: 12px; flex-basis: 100%; }
+.term summary { cursor: pointer; font-weight: 600; list-style: none; }
+.term summary::-webkit-details-marker { display: none; }
+.term p { padding: 4px 0 6px; color: var(--muted); }
+
+.takeaway { background: var(--accent); border-color: transparent; color: var(--accent-text); font-size: 1.08em; line-height: 1.45; }
+.takeaway .label { color: inherit; opacity: 0.8; }
+.takeaway strong { background: none; text-decoration: underline; text-underline-offset: 3px; }
+.try { display: flex; gap: 10px; align-items: flex-start; }
+
+.qa { border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-bottom: 8px; background: var(--surface); }
+.qa summary { cursor: pointer; font-weight: 600; }
+.qa .answer { margin-top: 8px; color: var(--muted); }
+.qa .hint { font-weight: 400; color: var(--muted); font-size: 0.85em; margin-left: 6px; }
+.qa[open] .hint { display: none; }
+
+.legacy { line-height: 1.65; }
+.legacy :is(h1, h2, h3) { font-size: 1.1em; }
+
+.original { margin-top: 28px; border-top: 1px solid var(--line); padding-top: 12px; }
+.original pre { white-space: pre-wrap; font: inherit; color: var(--muted); line-height: 1.6; }
+
+.chapters { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 28px; }
+.chapters a { display: block; border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; background: var(--surface); }
+.chapters a:hover { text-decoration: none; border-color: var(--accent); }
+.chapters .dir { display: block; font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.chapters .next { text-align: right; grid-column: 2; }
+
+/* Focus mode: one idea at a time. */
+.focus-nav { display: none; }
+.article.focus .focus-hide { display: none; }
+.article.focus .idea { display: none; }
+.article.focus .idea.current { display: block; font-size: 1.12em; padding: 22px; box-shadow: 0 8px 30px color-mix(in srgb, var(--text) 8%, transparent); }
+.article.focus .idea.current details { display: block; }
+.article.focus .focus-nav { display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-top: 14px; }
+.focus-step { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* Inside Telegram: no site chrome, Telegram's own colors (set by reader.js); lines follow its hint color. */
+:root.in-telegram { --line: color-mix(in srgb, var(--muted) 28%, transparent); }
+.in-telegram header { display: none; }
+.in-telegram main { padding-top: 14px; }
+
+@media (max-width: 640px) {
+  .article { font-size: calc(1.03rem * var(--reading-scale)); }
+  .block { padding: 14px 15px; }
+  .chapters { grid-template-columns: 1fr; }
+  .chapters .next { grid-column: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) { .idea { transition: none; } }

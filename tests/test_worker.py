@@ -4,6 +4,7 @@ from chapterwise import jobs
 from chapterwise.cache import PostgresCache, cache_digest
 from chapterwise.db import CacheEntry, DocumentRow, Job, SectionRow
 from chapterwise.summarize import cache_key
+from chapterwise.summary_format import parse_card
 from chapterwise.worker import Worker
 from tests.conftest import FakeLLM
 
@@ -38,7 +39,8 @@ def test_scan_parse_and_summarize_end_to_end(sessions, settings):
             select(SectionRow).where(SectionRow.document_id == epub.id, SectionRow.position == 1)
         )
         key = cache_key("section", section.text_sha256, epub.title, section.title, "fake-model")
-        assert s.get(CacheEntry, cache_digest(key)).value["text"] == "summary #1"
+        stored = s.get(CacheEntry, cache_digest(key)).value
+        assert stored["format"] == "card" and parse_card(stored["text"]).tldr == "summary #1"
         assert {j.status for j in s.scalars(select(Job))} == {"done"}
 
 
@@ -73,7 +75,7 @@ def test_missing_api_key_fails_without_retrying(sessions, settings):
 
 def test_llm_errors_are_retried(sessions, settings):
     class FlakyLLM(FakeLLM):
-        def complete(self, system, user):
+        def complete(self, system, user, json_mode=False):
             raise ConnectionError("network down")
 
     worker = Worker(settings, sessions, llm=FlakyLLM("fake-model"))

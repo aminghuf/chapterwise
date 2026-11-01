@@ -1,7 +1,8 @@
-"""The web UI: a single-user, server-rendered app (no JavaScript)."""
+"""The web UI: a single-user, server-rendered app. JavaScript only enhances the summary article."""
 # No `from __future__ import annotations` here: FastAPI must see the real types of the local DB/User aliases.
 
 import hmac
+import re
 import time
 from collections import defaultdict, deque
 from pathlib import Path
@@ -10,8 +11,10 @@ from urllib.parse import quote, urlparse
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markdown_it import MarkdownIt
+from markupsafe import Markup, escape
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
@@ -27,9 +30,12 @@ from chapterwise.db import (
     make_engine,
     make_session_factory,
 )
-from chapterwise.summarize import cache_key
+from chapterwise.links import read_token_target, read_url
+from chapterwise.summarize import StoredSummary, find_summary, summary_keys
+from chapterwise.summary_format import try_parse_card
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
+STATIC_DIR = Path(__file__).parent / "static"
 LOGIN_MAX_FAILURES = 10
 LOGIN_WINDOW_SECONDS = 15 * 60
 SESSION_MAX_AGE = 30 * 24 * 3600
@@ -37,15 +43,28 @@ SESSION_MAX_AGE = 30 * 24 * 3600
 # Raw HTML in model output is escaped, never rendered.
 _markdown = MarkdownIt("commonmark", {"html": False}).enable(["table", "strikethrough"])
 
+_CSP = (
+    "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+    "script-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors {}"
+)
 SECURITY_HEADERS = {
-    "Content-Security-Policy": (
-        "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
-        "script-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
-    ),
+    "Content-Security-Policy": _CSP.format("'none'"),
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "same-origin",
     "X-Frame-Options": "DENY",
 }
+# Read links open inside Telegram; Telegram Web shows mini apps in an iframe.
+READ_LINK_HEADERS = {
+    "Content-Security-Policy": _CSP.format("https://web.telegram.org"),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+}
+_BOLD = re.compile(r"\*\*(.+?)\*\*")
+
+
+def emphasize(text: str) -> Markup:
+    """Escape model text, then turn its **bold** markers into <strong>."""
+    return Markup(_BOLD.sub(r"<strong>\1</strong>", str(escape(text or ""))))
 
 
 class LoginRequired(Exception):
@@ -80,6 +99,7 @@ def create_app(settings: Settings, sessions: sessionmaker | None = None) -> Fast
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
     templates.env.filters["num"] = lambda n: f"{n or 0:,}"
     templates.env.filters["markdown"] = _markdown.render
+    templates.env.filters["emph"] = emphasize
 
     app = FastAPI(title="chapterwise", docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(
@@ -90,6 +110,7 @@ def create_app(settings: Settings, sessions: sessionmaker | None = None) -> Fast
         same_site="lax",
         https_only=settings.secure_cookies,
     )
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     @app.middleware("http")
     async def protect(request: Request, call_next):
@@ -99,7 +120,8 @@ def create_app(settings: Settings, sessions: sessionmaker | None = None) -> Fast
             if source and urlparse(source).netloc != request.headers.get("host"):
                 return PlainTextResponse("Cross-site request blocked", status_code=403)
         response = await call_next(request)
-        for name, value in SECURITY_HEADERS.items():
+        headers = READ_LINK_HEADERS if request.url.path.startswith("/r/") else SECURITY_HEADERS
+        for name, value in headers.items():
             response.headers.setdefault(name, value)
         return response
 
@@ -127,9 +149,46 @@ def create_app(settings: Settings, sessions: sessionmaker | None = None) -> Fast
             {"api_key_set": bool(settings.api_key), "model": settings.model, **context},
         )
 
-    def summary_digest(doc: DocumentRow, section: SectionRow) -> str:
-        return cache_digest(
-            cache_key("section", section.text_sha256, doc.title, section.title, settings.model)
+    def summary_digests(doc_title: str, section_title: str, text_hash: str) -> list[str]:
+        """Digests a section's summary may be stored under: current format first, then older ones."""
+        return [cache_digest(k) for k in summary_keys(text_hash, doc_title, section_title, settings.model)]
+
+    def summary_states(doc: DocumentRow, sections) -> dict[int, str]:
+        """position -> "done" (current format) | "legacy" (older format) | "none"."""
+        digests = {s.position: summary_digests(doc.title, s.title, s.text_sha256) for s in sections}
+        found = cache.existing([d for ds in digests.values() for d in ds])
+        states = {}
+        for position, (current, *older) in digests.items():
+            if current in found:
+                states[position] = "done"
+            elif any(d in found for d in older):
+                states[position] = "legacy"
+            else:
+                states[position] = "none"
+        return states
+
+    def stored_summary(doc: DocumentRow, section: SectionRow) -> StoredSummary | None:
+        return find_summary(cache, section.text_sha256, doc.title, section.title, settings.model)
+
+    def article_context(doc: DocumentRow, section: SectionRow) -> dict:
+        stored = stored_summary(doc, section)
+        card = try_parse_card(stored.text) if stored and stored.format == "card" else None
+        return {
+            "doc": doc,
+            "section": section,
+            "total": len(doc.sections),
+            "card": card,
+            "legacy": stored.text if stored and card is None else None,
+            "is_current": bool(stored and stored.current and card),
+            "article_key": f"{doc.id}-{section.position}-{section.text_sha256[:10]}",
+        }
+
+    def neighbours(doc: DocumentRow, position: int) -> tuple[SectionRow | None, SectionRow | None]:
+        ordered = sorted(doc.sections, key=lambda s: s.position)
+        index = next(i for i, s in enumerate(ordered) if s.position == position)
+        return (
+            ordered[index - 1] if index > 0 else None,
+            ordered[index + 1] if index + 1 < len(ordered) else None,
         )
 
     def queue_counts(session: Session) -> dict[str, int]:
@@ -194,16 +253,16 @@ def create_app(settings: Settings, sessions: sessionmaker | None = None) -> Fast
             )
         ).all()
         by_id = {d.id: d for d in docs}
-        digests: dict[int, list[str]] = defaultdict(list)
+        digests: dict[int, list[list[str]]] = defaultdict(list)
         for document_id, title, sha in sections:
-            doc_title = by_id[document_id].title
-            digests[document_id].append(
-                cache_digest(cache_key("section", sha, doc_title, title, settings.model))
-            )
-        done = cache.existing([d for ds in digests.values() for d in ds])
+            digests[document_id].append(summary_digests(by_id[document_id].title, title, sha))
+        found = cache.existing([d for per_doc in digests.values() for ds in per_doc for d in ds])
         stats = {
-            doc_id: {"sections": len(ds), "summarized": sum(1 for d in ds if d in done)}
-            for doc_id, ds in digests.items()
+            doc_id: {
+                "sections": len(per_doc),
+                "summarized": sum(1 for ds in per_doc if any(d in found for d in ds)),
+            }
+            for doc_id, per_doc in digests.items()
         }
         counts = queue_counts(session)
         return render(
@@ -234,15 +293,9 @@ def create_app(settings: Settings, sessions: sessionmaker | None = None) -> Fast
     def book(request: Request, document_id: int, session: DB, _user: User):
         doc = get_doc(session, document_id)
         sections = doc.sections
-        done = cache.existing([summary_digest(doc, s) for s in sections])
+        states = summary_states(doc, sections)
         active = active_summaries(session, doc.id)
-        rows = [
-            {
-                "section": s,
-                "state": "done" if summary_digest(doc, s) in done else active.get(s.position, "none"),
-            }
-            for s in sections
-        ]
+        rows = [{"section": s, "state": active.get(s.position) or states[s.position]} for s in sections]
         missing = [r["section"] for r in rows if r["state"] == "none"]
         top_level = min((s.level for s in sections), default=1)
         return render(
@@ -253,6 +306,7 @@ def create_app(settings: Settings, sessions: sessionmaker | None = None) -> Fast
             top_level=top_level,
             missing_count=len(missing),
             missing_tokens=sum(s.tokens for s in missing),
+            legacy_count=sum(1 for r in rows if r["state"] == "legacy"),
             refresh=doc.status == "pending" or bool(active),
             telegram=bool(settings.telegram_token),
             subscription=delivery.open_subscription(session, doc.id),
@@ -285,9 +339,12 @@ def create_app(settings: Settings, sessions: sessionmaker | None = None) -> Fast
         if not settings.api_key:
             raise HTTPException(400, "DEEPSEEK_API_KEY is not set")
         doc = get_doc(session, document_id)
-        if sections == "all":
-            done = cache.existing([summary_digest(doc, s) for s in doc.sections])
-            positions = [s.position for s in doc.sections if summary_digest(doc, s) not in done]
+        if sections in ("all", "legacy"):
+            wanted = "none" if sections == "all" else "legacy"
+            states = summary_states(doc, doc.sections)
+            positions = [s.position for s in doc.sections if states[s.position] == wanted]
+            if not positions:
+                return RedirectResponse(f"/b/{doc.id}", status_code=303)
         else:
             try:
                 positions = [int(sections)]
@@ -309,24 +366,59 @@ def create_app(settings: Settings, sessions: sessionmaker | None = None) -> Fast
     @app.get("/b/{document_id}/s/{position}", response_class=HTMLResponse)
     def section_page(request: Request, document_id: int, position: int, session: DB, _user: User):
         doc = get_doc(session, document_id)
-        by_position = {s.position: s for s in doc.sections}
-        section = by_position.get(position)
+        section = next((s for s in doc.sections if s.position == position), None)
         if section is None:
             raise HTTPException(404, "Section not found")
-        entry = cache.get(cache_key("section", section.text_sha256, doc.title, section.title, settings.model))
-        state = "done" if entry else active_summaries(session, doc.id).get(position, "none")
-        positions = sorted(by_position)
-        index = positions.index(position)
+        context = article_context(doc, section)
+        state = active_summaries(session, doc.id).get(position)
+        if state is None:
+            state = "done" if context["card"] or context["legacy"] else "none"
+        prev, next_ = neighbours(doc, position)
         return render(
             request,
             "section.html",
-            doc=doc,
-            section=section,
-            summary=entry["text"] if entry else None,
+            **context,
             state=state,
-            prev=by_position[positions[index - 1]] if index > 0 else None,
-            next=by_position[positions[index + 1]] if index + 1 < len(positions) else None,
-            refresh=state in ACTIVE_JOB_STATUSES,
+            prev=prev,
+            next=next_,
+            prev_href=f"/b/{doc.id}/s/{prev.position}" if prev else None,
+            next_href=f"/b/{doc.id}/s/{next_.position}" if next_ else None,
+            back_href=f"/b/{doc.id}#s{position}",
+            summarize_form=True,
+            upgrade_form=not context["is_current"],
+            refresh=state in ACTIVE_JOB_STATUSES and not context["card"],
+        )
+
+    # --- signed read links (opened from Telegram, no login) ----------------------------------------------
+
+    @app.get("/r/{token}", response_class=HTMLResponse)
+    def read_link(request: Request, token: str, session: DB):
+        target = read_token_target(settings.secret_key, token)
+        doc = session.get(DocumentRow, target[0]) if target else None
+        section = next((s for s in doc.sections if s.position == target[1]), None) if doc else None
+        if section is None:
+            return HTMLResponse(
+                "<!doctype html><meta name=viewport content='width=device-width'>"
+                "<p style='font:16px system-ui;padding:24px'>This link has expired or no longer exists.</p>",
+                status_code=404,
+            )
+        prev, next_ = neighbours(doc, section.position)
+
+        def link(s: SectionRow | None) -> str | None:
+            return read_url("", settings.secret_key, doc.id, s.position) if s else None
+
+        return render(
+            request,
+            "reader.html",
+            **article_context(doc, section),
+            state="none",
+            prev=prev,
+            next=next_,
+            prev_href=link(prev),
+            next_href=link(next_),
+            back_href=None,
+            summarize_form=False,
+            upgrade_form=False,
         )
 
     # --- jobs ---------------------------------------------------------------------------------------------

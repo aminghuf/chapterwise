@@ -44,6 +44,12 @@
   {% else %}
   <span class="ok small">Every section is summarized or queued.</span>
   {% endif %}
+  {% if legacy_count %}
+  <form class="inline" method="post" action="/b/{{ doc.id }}/summarize">
+    <input type="hidden" name="sections" value="legacy">
+    <button class="quiet" type="submit" {% if not api_key_set %}disabled{% endif %}>✨ Redo {{ legacy_count }} old summar{{ "y" if legacy_count == 1 else "ies" }} in the new format</button>
+  </form>
+  {% endif %}
 </div>
 
 <div class="table-wrap">
@@ -58,6 +64,7 @@
       <td class="num hide-sm muted">{{ s.words|num }}</td>
       <td class="num">
         {% if row.state == "done" %}<a href="/b/{{ doc.id }}/s/{{ s.position }}">Read</a>
+        {% elif row.state == "legacy" %}<a href="/b/{{ doc.id }}/s/{{ s.position }}">Read</a> <span class="pill muted" title="Made before the new format">old</span>
         {% elif row.state == "running" %}<span class="pill">working…</span>
         {% elif row.state == "queued" %}<span class="pill">queued</span>
         {% else %}

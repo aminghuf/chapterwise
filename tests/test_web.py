@@ -4,10 +4,11 @@ from sqlalchemy import select
 
 from chapterwise.cache import PostgresCache
 from chapterwise.db import DocumentRow, Job, SectionRow
+from chapterwise.links import make_read_token
 from chapterwise.summarize import cache_key
 from chapterwise.web import create_app
 from chapterwise.worker import Worker
-from tests.conftest import FakeLLM
+from tests.conftest import FakeLLM, card_json
 
 
 @pytest.fixture
@@ -159,3 +160,81 @@ def test_telegram_subscription_controls(library, sessions, settings):
 
 def test_subscription_controls_hidden_without_telegram(logged_in, library, sessions):
     assert "Read daily on Telegram" not in logged_in.get(f"/b/{epub_id(sessions)}").text
+
+
+# --- the summary article -----------------------------------------------------------------------------
+
+
+def store_summary(sessions, settings, doc_id, position, text, fmt="card", version=None):
+    with sessions() as s:
+        doc = s.get(DocumentRow, doc_id)
+        section = s.scalar(
+            select(SectionRow).where(SectionRow.document_id == doc_id, SectionRow.position == position)
+        )
+        key = cache_key("section", section.text_sha256, doc.title, section.title, settings.model, version)
+    PostgresCache(sessions).set(key, {"text": text, "format": fmt})
+
+
+def test_article_renders_the_card(logged_in, library, sessions, settings):
+    doc_id = epub_id(sessions)
+    store_summary(sessions, settings, doc_id, 0, card_json(tldr="Focus is a **budget**."))
+    page = logged_in.get(f"/b/{doc_id}/s/0").text
+    assert "Focus is a <strong>budget</strong>." in page
+    assert "Attention is limited" in page and "Like a phone battery that drains." in page
+    assert 'class="block takeaway' in page and "Try this today" in page
+    assert '<details class="qa">' in page and "How long is a sprint?" in page
+    assert "Section 1 of 3" in page and "min read" in page
+    assert '<script src="/static/reader.js" defer></script>' in page
+    assert "Redo in the new" not in page  # already the current format
+
+
+def test_article_escapes_model_html(logged_in, library, sessions, settings):
+    doc_id = epub_id(sessions)
+    store_summary(sessions, settings, doc_id, 0, card_json(tldr="<img src=x onerror=alert(1)> **ok**"))
+    page = logged_in.get(f"/b/{doc_id}/s/0").text
+    assert "<img src=x" not in page and "&lt;img src=x" in page and "<strong>ok</strong>" in page
+
+
+def test_old_summary_is_shown_with_an_upgrade_button(logged_in, library, sessions, settings):
+    doc_id = epub_id(sessions)
+    store_summary(sessions, settings, doc_id, 0, "Old **markdown**", fmt="markdown", version="1")
+    page = logged_in.get(f"/b/{doc_id}/s/0").text
+    assert "Old <strong>markdown</strong>" in page and "Redo in the new, easier-to-read format" in page
+    book = logged_in.get(f"/b/{doc_id}").text
+    assert "Redo 1 old summary in the new format" in book
+    assert "Summarize all remaining (2)" in book  # the old one counts as summarized
+
+    logged_in.post(f"/b/{doc_id}/summarize", data={"sections": "legacy"})
+    with sessions() as s:
+        queued = s.scalars(select(Job).where(Job.kind == "summarize", Job.status == "queued")).all()
+        assert [j.payload["position"] for j in queued] == [0]
+
+
+def test_read_link_works_without_login(client, library, sessions, settings):
+    doc_id = epub_id(sessions)
+    store_summary(sessions, settings, doc_id, 1, card_json(tldr="Read anywhere."))
+    token = make_read_token(settings.secret_key, doc_id, 1)
+    page = client.get(f"/r/{token}")
+    assert page.status_code == 200 and "Read anywhere." in page.text
+    assert "frame-ancestors https://web.telegram.org" in page.headers["Content-Security-Policy"]
+    assert "X-Frame-Options" not in page.headers
+    assert 'name="robots" content="noindex' in page.text
+    assert "<form" not in page.text.split("<main>")[1]  # read-only: no summarize or logout buttons
+    # Neighbouring sections link to their own signed pages.
+    assert f'href="/r/{make_read_token(settings.secret_key, doc_id, 2)}"' in page.text
+
+
+def test_bad_read_links(client, library, sessions, settings):
+    doc_id = epub_id(sessions)
+    token = make_read_token(settings.secret_key, doc_id, 1)
+    assert client.get(f"/r/{token[:-2]}xx").status_code == 404  # tampered
+    assert client.get(f"/r/{make_read_token('another-secret', doc_id, 1)}").status_code == 404
+    assert client.get(f"/r/{make_read_token(settings.secret_key, doc_id, 99)}").status_code == 404
+    assert client.get(f"/b/{doc_id}/s/1", follow_redirects=False).status_code == 303  # still private
+
+
+def test_reader_assets_are_served(client):
+    script = client.get("/static/reader.js")
+    assert script.status_code == 200 and "javascript" in script.headers["content-type"]
+    assert client.get("/static/article.css").status_code == 200
+    assert "script-src 'self'" in client.get("/login").headers["Content-Security-Policy"]

@@ -46,3 +46,20 @@ def test_build_message_fits_and_cuts_at_block_boundary():
 
 def test_plain_text_fallback():
     assert to_plain_text("<b>Book</b>\n\n• one &amp; two") == "Book\n\n• one & two"
+
+
+def test_card_message():
+    from chapterwise.summary_format import parse_card
+    from chapterwise.telegram_format import build_card_message
+    from tests.conftest import card_json
+
+    card = parse_card(card_json(tldr="A <tag> & **bold** line."))
+    html, truncated = build_card_message("<b>Book</b>", card)
+    assert not truncated
+    assert "💡 <b>TL;DR</b>\nA &lt;tag&gt; &amp; <b>bold</b> line." in html
+    assert "⏱️ <b>Short sprints work</b>\nWork in <b>25-minute</b> blocks." in html
+    assert "✅ <b>Try this:</b> Set one timer today." in html
+
+    long_card = parse_card(card_json(key_ideas=[{"title": f"T{n}", "point": "x" * 590} for n in range(8)]))
+    html, truncated = build_card_message("<b>Book</b>", long_card)
+    assert truncated and len(html) <= 3800 and html.endswith("(open the article for the rest)")
